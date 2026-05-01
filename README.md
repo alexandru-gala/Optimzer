@@ -81,20 +81,25 @@ Internal Pago skill that gives colleagues 3 ranked recommendations for slowing t
 │ User reads their own chat history; skill asks anchored questions, scores answers, returns recommendations│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌────────────────────────────┐
-│ STEP 1: History anchors    │
-│ User opens chat sidebar    │
-│ and checks last ~10        │
-│ sessions.                  │
-└──────────────┬─────────────┘
+┌────────────────────────────────────────────┐
+│ STEP 1: Past-chat RETRIEVAL (not scroll)   │
+│ Skill asks the host Claude model to use    │
+│ the "reference past chats" feature to      │
+│ look up the user's last ~10 conversations. │
+└──────────────┬─────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│ Skill asks 3 anchored questions:                                                        │
-│ H1: sessions past 30 msgs?                                                              │
-│ H2: sessions with >50KB attachments?                                                    │
-│ H3: sessions where user explicitly picked the model?                                    │
-│ If H_SKIPPED: all H multipliers fall back to 1.0                                        │
+│ Model retrieves and computes 3 counts:                                                   │
+│ R-H1: sessions past 30 msgs?           R-H2: sessions with >50KB attachments?            │
+│ R-H3: sessions where user explicitly picked the model?                                   │
+│                                                                                          │
+│ Reports ONE state honestly:                                                              │
+│ • RETRIEVAL_OK       (≥5 sessions referenced)  → multiplier 2.0×                         │
+│ • RETRIEVAL_PARTIAL  (<5 sessions / partial)   → multiplier 1.5×                         │
+│ • RETRIEVAL_UNAVAILABLE (feature off / empty)  → fall back to user sidebar (mult 1.5×)   │
+│                                                  or gut-feel only (mult 1.0×) if skipped │
+│ NO fabrication — empty retrieval triggers fallback, not invented numbers.                │
 └──────────────┬───────────────────────────────────────────────────────────────────────────┘
                │
                ▼
@@ -123,7 +128,7 @@ Internal Pago skill that gives colleagues 3 ranked recommendations for slowing t
                │
                ▼
 ┌──────────────────────────────── scoring ─────────────────────────────────────────────────┐
-│ H-anchored × 1.5     opener-match × 1.3     gut-feel/self-report × 1.0                  │
+│ retrieval × 2.0  │  sidebar-fallback × 1.5  │  opener-match × 1.3  │  gut-feel × 1.0     │
 │ Shared recommendations.md ranks matching rules R1-R8; sources.md supplies citation tier. │
 └──────────────┬───────────────────────────────────────────────────────────────────────────┘
                │
@@ -140,7 +145,7 @@ Internal Pago skill that gives colleagues 3 ranked recommendations for slowing t
                │
                ▼
 ┌──────────────────────────────── end ─────────────────────────────────────────────────────┐
-│ Honest disclaimer: "you read your history, I scored it"                                  │
+│ Honest disclaimer: "I retrieved what I could, scored it, and asked you the rest"         │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

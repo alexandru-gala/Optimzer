@@ -1,5 +1,40 @@
 # Pago Optimizer — Changelog
 
+## v3.2 — 2026-05-01 (chat variant: retrieval-driven, not user-driven)
+
+**Driver**: alex flagged that asking the user to scroll through 10 sessions is friction. Claude.ai already has a "reference past chats" feature (Pro/Team/Max plans) that lets the host model retrieve signals from prior conversations directly. The skill should use that.
+
+**What landed**:
+
+- **Step 2 redesigned**: skill now instructs the host Claude model to use the reference-past-chats capability to look up the user's last ~10 sessions and compute three counts (R-H1: sessions past 30 msgs, R-H2: sessions with >50KB attachments, R-H3: sessions with explicit model picks). No user scrolling.
+- **Three retrieval states, honestly reported**:
+  - `RETRIEVAL_OK` (≥5 sessions referenced) → confidence multiplier **2.0×**
+  - `RETRIEVAL_PARTIAL` (<5 sessions or partial counts) → multiplier **1.5×**
+  - `RETRIEVAL_UNAVAILABLE` (feature off, free plan, empty result) → multiplier **1.0×**, fall back to **Step 2-fallback** (the v3.1 user-driven sidebar walkthrough — preserved as graceful degradation)
+- **Honesty rule #1 rewritten**: "you are using probabilistic retrieval, not a database query." Skill must NOT fabricate retrieval results — if reference is empty, say so and fall back. False precision is worse than fallback.
+- **Honesty rule #2 added**: explicit no-fabricate clause for retrieval failure.
+- **Scoring updated**: new multiplier ladder 2.0 / 1.5 / 1.3 / 1.0 in both `chat/SKILL.md` Step 5 and the shared `recommendations.md`.
+- **R3, R4, R6 trigger language**: now references R-H1/R-H2/R-H3 retrieval anchors as the highest-confidence path, with H1/H2/H3 fallback as medium-confidence.
+
+**What did NOT change**:
+- Step 3 (6 habit questions I1–I6) — unchanged
+- Step 4 (optional opener paste) — unchanged
+- Cowork variant — unchanged (already has real OTel telemetry)
+- Recommendation rules R1, R2, R5, R7, R8 — unchanged
+- Distribution, collector, dashboard — unchanged
+
+**Caveat documented**: reference-past-chats is a Pro/Team/Max feature. Free-plan users will hit the user-driven fallback. The skill probes once and degrades gracefully.
+
+**Files touched**:
+- `v3/chat/SKILL.md` — Step 2 rewritten, Step 5 scoring table updated, honesty rules expanded
+- `v3/recommendations.md` — calibration_multiplier ladder updated, R3/R4/R6 triggers and why_templates updated to reference R-H anchors
+- `v3/CHANGELOG.md` — this entry
+- `README.md` — Diagram 2 updated to show retrieval-not-scrolling
+
+**Rollback**: `git revert <commit>` — single-commit change.
+
+---
+
 ## v3.1 — 2026-05-01 (chat variant: history-anchored calibration)
 
 **Driver**: alex feedback after reading the README — chat variant should "check into existing past chats complementary to the questions."
