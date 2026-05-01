@@ -1,0 +1,25 @@
+{
+  "name": "pago-optimizer",
+  "version": "0.3.0",
+  "description": "Pago internal — 9-question productivity audit for Office/Cowork usage. Returns 3 ranked recommendations.",
+  "author": "Pago Engineering <eng@pago.ro>",
+  "homepage": "https://github.com/pago/claude-optimizer-skill",
+  "license": "Proprietary — Pago internal",
+  "skills": [
+    {
+      "path": "SKILL.md"
+    }
+  ],
+  "permissions": {
+    "network_access": false,
+    "filesystem_access": false,
+    "mcp_tools": []
+  },
+  "supported_surfaces": ["cowork"],
+  "min_cowork_version": "1.0.0",
+  "metadata": {
+    "internal_audit_id": "pago-skill-001",
+    "telemetry_note": "This skill emits NO telemetry. Org-level Office/Cowork OTel events flow independently to the Pago collector based on org admin Settings → Monitoring config.",
+    "privacy_note": "Skill does not read, store, or transmit user input outside the conversation."
+  }
+}
