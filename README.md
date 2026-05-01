@@ -2,7 +2,149 @@
 
 Internal Pago skill that gives colleagues 3 ranked recommendations for slowing their Claude usage-window burn. Ships in two surface variants (claude.ai chat, Office/Cowork), shares a single recommendation library, and pairs with an org-level OpenTelemetry collector for aggregate dashboards.
 
-> Status: design + scaffold complete (v3). Awaiting decisions from @alexandru-gala on D1–D5 in `SYNTHESIS.md`, then soft-launch with 5 volunteers.
+> Status: design + scaffold complete (v3.1). Awaiting decisions from @alexandru-gala on D1–D5 in `SYNTHESIS.md`, then soft-launch with 5 volunteers.
+
+## Architecture
+
+```
+╔════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║ DIAGRAM 1 — pago-optimizer architecture                                                               ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────── pago-optimizer repo ────────────────────────────┐
+│                                                                              │
+│  ┌───────────────────────────────┐        ┌───────────────────────────────┐  │
+│  │ chat/SKILL.md                 │        │ cowork/SKILL.md + plugin.json │  │
+│  │ claude.ai chat surface        │        │ Office/Cowork surface         │  │
+│  └──────────────┬────────────────┘        └────────────────┬──────────────┘  │
+│                 ┆ imports                                   ┆ imports         │
+│                 ┆                                           ┆                 │
+│                 ▼                                           ▼                 │
+│        ┌────────────────────────────────────────────────────────────┐         │
+│        │ SHARED LIBRARY                                             │         │
+│        │ recommendations.md: R1-R8, scored ranking                  │         │
+│        │ sources.md: citation tiers                                │         │
+│        └────────────────────────────────────────────────────────────┘         │
+│                  ▲ only rule-change path to both surfaces                     │
+└──────────────────┼───────────────────────────────────────────────────────────┘
+                   ┆ shared/imports
+                   ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Distribution                                                                │
+│ alex/org admin ──> Anthropic Settings ──> Skills ──> "Share with organization"│
+│ Team plan share makes both skill variants available to the org               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+       Skill delivery path is separate from telemetry path:  Skill ≠ telemetry
+       chat/SKILL.md has NO telemetry path; only Office/Cowork agents emit OTLP.
+
+┌───────────────────── one-time telemetry config, passive after setup ─────────────────────┐
+│ alex ──> Anthropic Settings ──> Monitoring panel                                         │
+│          paste OTLP endpoint URL + Bearer token once                                    │
+└───────────────────────────────────────┬──────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌──────────────────────────── Cowork-only telemetry transport ─────────────────────────────┐
+│ Office/Cowork agents ──OpenTelemetry──> Cloudflare Access (auth) ──> Pago otel-collector │
+└──────────────────────────────────────────────────────────────────────────┬───────────────┘
+                                                                           │ INGEST
+                                                                           ▼
+┌─────────────────────────────── Pago otel-collector ──────────────────────────────────────┐
+│ ANONYMIZES AT INGEST, not query time                                                     │
+│ drops: user.email, user.id, prompt.text, prompt.id, file.path, file.contents, tool.arguments│
+│ keeps: model, tool_name, mcp_server, input/output/cache tokens, duration, day-bucket      │
+│ keeps: session-length-bucket                                                             │
+│ v0: NO per-user pseudonyms; aggregate-only by design                                     │
+└──────────────────────────────────────────────┬───────────────────────────────────────────┘
+                                               │ writes daily rows
+                                               ▼
+                              ┌────────────────────────────────┐
+                              │ Postgres: org_aggregate_daily  │
+                              └───────────────┬────────────────┘
+                                              │ reads
+                                              ▼
+┌──────────────────────────────── alex-only dashboard ─────────────────────────────────────┐
+│ 6 metrics: model mix, token totals, cache ratio, MCP load/invoke, tool counts,           │
+│ session length distribution                                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## User flow (chat variant)
+
+```
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║ DIAGRAM 2 — chat variant user audit flow                                                 ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────── chat/SKILL.md on claude.ai chat surface ───────────────────────────────┐
+│ User reads their own chat history; skill asks anchored questions, scores answers, returns recommendations│
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────┐
+│ STEP 1: History anchors    │
+│ User opens chat sidebar    │
+│ and checks last ~10        │
+│ sessions.                  │
+└──────────────┬─────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ Skill asks 3 anchored questions:                                                        │
+│ H1: sessions past 30 msgs?                                                              │
+│ H2: sessions with >50KB attachments?                                                    │
+│ H3: sessions where user explicitly picked the model?                                    │
+│ If H_SKIPPED: all H multipliers fall back to 1.0                                        │
+└──────────────┬───────────────────────────────────────────────────────────────────────────┘
+               │
+               ▼
+┌────────────────────────────┐
+│ STEP 2: Habit questions    │
+│ 6 forced-choice prompts    │
+└──────────────┬─────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ I1 default model  │ I2 thinking default │ I3 MCP count │ I4 artifact type               │
+│ I5 tool-loop frequency      │ I6 frustration moment                                        │
+└──────────────┬───────────────────────────────────────────────────────────────────────────┘
+               │
+               ▼
+┌────────────────────────────┐
+│ STEP 3: Optional opener    │
+│ User pastes recent chat    │
+│ opener.                    │
+└──────────────┬─────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ Skill scans opener for: length, attachments, vague framing, model mentions               │
+└──────────────┬───────────────────────────────────────────────────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────── scoring ─────────────────────────────────────────────────┐
+│ H-anchored × 1.5     opener-match × 1.3     gut-feel/self-report × 1.0                  │
+│ Shared recommendations.md ranks matching rules R1-R8; sources.md supplies citation tier. │
+└──────────────┬───────────────────────────────────────────────────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────── output ──────────────────────────────────────────────────┐
+│ 3 ranked recommendations, each with:                                                     │
+│ Impact: h/m/l                                                                            │
+│ Confidence: vendor-pricing / telemetry / self-report                                     │
+│ Anchor: which step triggered it                                                          │
+│ Why                                                                                      │
+│ Today action                                                                             │
+│ Source URL                                                                               │
+└──────────────┬───────────────────────────────────────────────────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────── end ─────────────────────────────────────────────────────┐
+│ Honest disclaimer: "you read your history, I scored it"                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+> Diagrams produced by Codex (codex CLI 0.125.0) on 2026-05-01.
 
 ## What this repo contains
 
