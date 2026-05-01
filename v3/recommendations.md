@@ -19,7 +19,7 @@ Each recommendation has:
 
 ## Scored ranking
 
-Each rec emits a score: `score = base_impact_weight × confidence_weight × eligibility`.
+Each rec emits a score: `score = base_impact_weight × confidence_weight × eligibility × calibration_multiplier`.
 
 | `base_impact` | weight |
 |---|---|
@@ -34,6 +34,11 @@ Each rec emits a score: `score = base_impact_weight × confidence_weight × elig
 | self-report | 2 |
 
 `eligibility` is 1 if the user's surface supports the action, 0 otherwise. Score 0 → drop.
+
+`calibration_multiplier` (chat variant only — Cowork variant is always 1.0):
+- 1.5 when the trigger fires from a history-anchored answer (H1–H3 in the chat skill)
+- 1.3 when the trigger fires from an opener pattern match
+- 1.0 when the trigger fires from a gut-feel intake answer (I1–I6) or when H_SKIPPED=true
 
 Top 3 by score. Ties broken by `base_impact_weight` then `confidence_weight` then `id` ascending.
 
@@ -60,21 +65,21 @@ Top 3 by score. Ties broken by `base_impact_weight` then `confidence_weight` the
 - falsified_when: Anthropic stops billing thinking tokens as output
 
 ### R3 — Adopt /clear discipline between unrelated tasks
-- triggers: `Q2 in {30-80, 80+, never}`
+- triggers: `I_session_length in {30-80, 80+, never}` OR `H1 in {3-5, 6-10, most-run-long}` (chat variant only — H1 is the higher-confidence anchor)
 - base_impact: high
-- confidence: self-report (no published % figure)
+- confidence: self-report (no published % figure); promotes to history-anchored when H1 fires
 - eligible_surfaces: chat, cowork
-- why_template: "You said sessions go {Q2} messages. Each retained message reprocesses prior context; past msg ~50, per-message input cost grows roughly linearly."
+- why_template: "Your history showed {H1} of your last 10 sessions ran past 30 messages. Each retained message reprocesses prior context; past msg ~50, per-message input cost grows roughly linearly."
 - today_step: "/clear (chat) or 'New agent' (Cowork) before each unrelated task. New task = new context."
 - source: https://code.claude.com/docs/en/best-practices — [vendor]
 - falsified_when: never (this is structural to how transformer context works)
 
 ### R4 — Use subagents for codebase exploration / large-file work
-- triggers: `Q4 in {500KB+, full-repo} OR Q7 in {most, always}`
+- triggers: `I_attachment in {500KB+, full-repo} OR I5_tool_loops in {most, always}` OR `H2 in {3-5, 6+, mostly-attachment-heavy}` (chat variant — H2 is the higher-confidence anchor)
 - base_impact: medium
-- confidence: self-report (depends on exploration depth)
+- confidence: self-report (depends on exploration depth); promotes to history-anchored when H2 fires
 - eligible_surfaces: cowork (full), chat (limited — server-side tools only)
-- why_template: "You said you {Q4 or Q7-driven phrase}. A subagent's context is isolated from your main thread; you receive the summary only."
+- why_template: "Your history showed {H2} of recent sessions had large attachments. A subagent's context is isolated from your main thread; you receive the summary only."
 - today_step: "Tell the agent: 'Use a subagent to explore this codebase and report back.' Or in Cowork, kick off a side task."
 - source: https://code.claude.com/docs/en/best-practices — [vendor]
 - falsified_when: subagent feature deprecated
@@ -90,11 +95,11 @@ Top 3 by score. Ties broken by `base_impact_weight` then `confidence_weight` the
 - falsified_when: never (architectural)
 
 ### R6 — Pin a model default per task type
-- triggers: `Q1 == no-explicit-pick OR Q8 == always-default`
+- triggers: `I1 == no-explicit-pick` OR `H3 in {0-always-default, 1-2}` (chat variant — H3 is the higher-confidence anchor: how often the user explicitly picked a model in their last 10 sessions)
 - base_impact: medium
 - confidence: vendor-pricing
 - eligible_surfaces: chat, cowork
-- why_template: "You said you don't explicitly pick a model. Without a pick, the platform may route to a more expensive model than your task needs."
+- why_template: "Your history showed you explicitly picked a model in only {H3} of your last 10 sessions. Without a pick, the platform may route to a more expensive model than your task needs."
 - today_step: "Pick: Haiku for triage / quick edits, Sonnet for code, Opus only for architecture. Set Sonnet as your chat default."
 - source: https://platform.claude.com/docs/en/about-claude/pricing — [vendor]
 - falsified_when: Anthropic introduces transparent auto-routing

@@ -1,4 +1,30 @@
-# Pago Optimizer — v2 → v3 Changelog
+# Pago Optimizer — Changelog
+
+## v3.1 — 2026-05-01 (chat variant: history-anchored calibration)
+
+**Driver**: alex feedback after reading the README — chat variant should "check into existing past chats complementary to the questions."
+
+**Reality check**: claude.ai chat skills cannot programmatically read past conversations. There is no API surface. Anthropic's only path is the human-initiated data export (Settings → Privacy → Export Data → email zip).
+
+**What landed instead**: a 3-step flow in the chat variant.
+
+- **Step 1 (new)**: User opens chat history sidebar; skill asks 3 anchored questions (H1–H3) about their last ~10 sessions — sessions past 30 messages, sessions with large attachments, sessions where they explicitly picked a model. These map directly to R3, R4, R6.
+- **Step 2 (revised)**: Habit intake reduced from 9 → 6 questions (I1–I6). The 3 questions removed (`session length`, `attachment size`, `model override behavior`) are now better-answered by the H-anchored Step 1.
+- **Step 3 (new, optional)**: User can paste a recent chat opener for an artifact-level signal. Skill scans for length, attachments, vague framing, model mentions. Skip is fine.
+- **Scoring (revised)**: Added `calibration_multiplier` to the scored ranking formula. H-anchored triggers weight 1.5×; opener-pattern triggers weight 1.3×; gut-feel triggers (I1–I6) stay at 1.0×. If user skips history (`H_SKIPPED=true`), all H multipliers fall back to 1.0.
+- **Honesty**: New rule #7 in the skill — past-chat answers from Step 2 carry **higher confidence weight** in scoring than gut-feel answers from Step 3. Output template's `Source` line now reflects what was actually used (history-anchored + intake + opener / history-anchored + intake / intake only).
+
+**Cowork variant**: unchanged. Cowork users have a separate telemetry path (the OTLP collector) that produces real per-session data org-wide — no need for an in-skill anchored-question flow.
+
+**Files touched**:
+- `v3/chat/SKILL.md` — restructured into 3 steps
+- `v3/recommendations.md` — R3, R4, R6 triggers updated to accept H-anchors; scored ranking section updated with calibration_multiplier
+
+**Rollback**: `git revert <commit>` — single-commit change.
+
+---
+
+## v3.0 — 2026-05-01 (initial fork from v2)
 
 **Date**: 2026-05-01
 **Trigger**: Codex + Kimi adversarial reviews of v2.
